@@ -1,0 +1,14 @@
+# Raw data (large, regenerable via data_pipeline.py)
+data/raw/
+
+# Python cache
+__pycache__/
+*.pyc
+
+# OS/editor cruft
+.DS_Store
+.vscode/
+
+# Environment
+venv/
+.env
