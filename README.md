@@ -174,7 +174,7 @@ nfl-game-predictor/
 
 ```bash
 # clone and install
-git clone [repo-url]
+git clone https://github.com/moiz-manzoor/nfl-game-predictor.git
 cd nfl-game-predictor
 pip install -r requirements.txt
 # built and tested on Python 3.11
