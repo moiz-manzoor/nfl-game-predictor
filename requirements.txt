@@ -6,3 +6,4 @@ joblib
 polars
 pytest
 pyarrow
+statsmodels

@@ -98,7 +98,7 @@ All rolling stats use last-3, last-5, and season-to-date windows, giving the mod
 
 Model A is trained on seasons ≤2024, so 2025 is its only genuine out-of-sample test set. Model B is trained on seasons ≤2023, making its full 2024-2025 test range a true holdout as well. Running the `--backtest` flag with `--model a` will still process both 2024 and 2025 games for convenience, but note that 2024 is in-sample for Model A specifically, its headline result is the 2025-only number above.
 
-Both models sit a few points behind the market, which is expected and reflects a realistic ceiling for a model built purely on team-level rolling stats without injury reports, QB-specific data, or line movement. The 2025 test set is roughly 270 games; no confidence interval or significance test was computed, so the ~2-point gap to Vegas should be read as directional rather than statistically confirmed.
+Both models sit a few points behind the market, which is expected and reflects a realistic ceiling for a model built purely on team-level rolling stats without injury reports, QB-specific data, or line movement. The 2025 test set is 284 games; a McNemar's test on the paired Model A vs Vegas outcomes (statistic=0.29, p=0.59, see Limitations) confirms the ~2-point gap is not statistically significant at this sample size, so it should be read as directional rather than confirmed.
 
 **Top features by coefficient magnitude (Model A):** rolling point differential (last5), season-to-date offensive success rate, and rolling offensive success rate (last5) were the strongest predictors, consistent with football intuition, recent scoring margin and offensive efficiency carry real signal. Note that rolling point differential is mechanically close to "which teams have recently been winning," so part of its predictive power likely reflects recent win/loss outcomes rather than purely situational skill. Given the multicollinearity between each stat's `_last3`/`_last5`/`_s2d` versions (see Methodology), individual coefficient magnitudes should be read as suggestive rather than a precise ranking, the correlated versions can trade off importance with each other in ways that don't reflect the underlying stat's true predictive value.
 
@@ -151,7 +151,7 @@ python src/predict_week.py --model a_2026 --season 2026 --week 1
 ## Limitations
 
 - **Hyperparameter selection was not fully held out.** The C-value regularization sweep was evaluated directly on each split's reported test set, rather than on a separate validation period. This likely makes the reported accuracy/log loss numbers slightly optimistic. A stricter setup would hold out a validation season (e.g. 2023) for tuning and report results only on a completely untouched final test set.
-- **No statistical significance testing.** The 2025 test set is ~270 games; the ~2-point accuracy gap to Vegas has no confidence interval or significance test attached, so it should be read as directional, not statistically confirmed.
+- **Statistical significance now tested via McNemar's test.** Comparing Model A and Vegas on the same 284 2025 games (`src/mcnemar_test.py`), McNemar's test with continuity correction gives statistic=0.29, p=0.59. At alpha=0.05, the ~2-point accuracy gap is not statistically significant, this doesn't mean the model and Vegas are proven equivalent, only that this sample size can't confirm the gap is more than random variation. This confirms the "directional, not statistically confirmed" framing this project has used throughout.
 - **Vegas comparison has a later information cutoff.** Closing lines incorporate injury reports, weather, and lineup news released much closer to kickoff than this model's frozen pre-week features, so part of the gap reflects a timing difference, not purely a feature gap.
 - The model does not incorporate QB starter continuity, injuries, weather, or line movement. These are plausible, untested explanations for most of the remaining gap to Vegas' accuracy, not a verified attribution, isolating how much each missing factor contributes would require adding them individually and re-measuring.
 - No individual player performance or advanced player-tracking stats (e.g. NFL Next Gen Stats like CPOE, time to throw, separation) are included, the model works entirely at the team level.
@@ -179,6 +179,7 @@ nfl-game-predictor/
 │   ├── feature_utils.py      # shared rolling-window feature helpers
 │   ├── train_classifier.py   # trains Model A and Model B, evaluation, Vegas comparison
 │   ├── train_production_model.py # trains the no-holdout production model for live 2026 use
+│   ├── mcnemar_test.py       # McNemar's test: Model A vs Vegas significance testing
 │   ├── predict_week.py       # predicts any season/week via CLI, works for future weeks
 │   ├── track_season.py       # season-long accuracy tracker for Model A
 │   └── combine_predictions.py # side-by-side Model A vs Model B comparison
@@ -209,6 +210,9 @@ python src/train_classifier.py
 
 # train the production model (no holdout, for live 2026 predictions)
 python src/train_production_model.py
+
+# run McNemar's test: Model A vs Vegas significance testing on the 2025 test set
+python src/mcnemar_test.py
 
 # run automated leakage tests
 pytest tests/
