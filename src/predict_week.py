@@ -11,6 +11,8 @@ week, so this works equally well for:
 Usage:
     python src/predict_week.py --model a --season 2026 --week 1
     python src/predict_week.py --model b --backtest   (2024-2025 backtest)
+    python src/predict_week.py --model a_2026 --season 2026 --week 1
+        (production model, trained on 2016-2025 with no holdout, for live 2026 games)
 
 Key leakage-prevention detail: latest_epa and latest_point_diff both grab
 each team's single most recent row by team only (not team+season). This
@@ -37,7 +39,7 @@ def moneyline_to_prob(moneyline):
 
 pbp = pd.read_csv("data/raw/pbp.csv", low_memory=False)
 
-# --- Build point_diff (rolling scoring margin) for each team, once ---
+# Build point_diff (rolling scoring margin) for each team, once
 home_rows = schedules[['season', 'week', 'home_team', 'away_team', 'home_score', 'away_score']].copy()
 home_rows.columns = ['season', 'week', 'team', 'opponent', 'points_for', 'points_allowed']
 
@@ -344,23 +346,30 @@ def predict_week(season, week, pbp, model, scaler):
 
 
 if __name__ == "__main__":
-    # --- Command-line arguments ---
+    # Command-line arguments
     parser = argparse.ArgumentParser(description="Predict NFL games with Model A or Model B")
-    parser.add_argument('--model', type=str, choices=['a', 'b'], default='a',
-                         help="Which trained model to use: 'a' (test=2025) or 'b' (test=2024-2025). Default: a")
+    parser.add_argument('--model', type=str, choices=['a', 'b', 'a_2026'], default='a',
+                         help="Which trained model to use: 'a' (test=2025), 'b' (test=2024-2025), "
+                              "or 'a_2026' (production model, trained on 2016-2025 with no holdout, for live 2026 predictions). Default: a")
     parser.add_argument('--season', type=int, help="Season to predict, e.g. 2026")
     parser.add_argument('--week', type=int, help="Week number to predict, e.g. 2")
     parser.add_argument('--backtest', action='store_true',
                          help="Run the full 2024-2025 backtest and print week-by-week accuracy")
     args = parser.parse_args()
 
-    # --- Load the chosen model ---
+    # Load the chosen model
     model_label = args.model.upper()
     model = joblib.load(f'models/model_{args.model}.pkl')
     scaler = joblib.load(f'models/scaler_{args.model}.pkl')
     print(f"Loaded Model {model_label}")
 
-    # --- Optional: run across multiple weeks and aggregate ---
+    # Optional: run across multiple weeks and aggregate
+    if args.backtest and args.model == 'a_2026':
+        print("--backtest is not meaningful for the production model (a_2026): "
+              "2024-2025 is in-sample for it, not a real holdout. "
+              "Use --model a or --model b for backtesting instead.")
+        args.backtest = False
+
     if args.backtest:
         all_results = []
 

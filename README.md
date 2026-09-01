@@ -21,6 +21,7 @@ This project predicts NFL game winners using only information available before k
 - [Results](#results)
 - [Vegas Benchmark Comparison](#vegas-benchmark-comparison)
 - [Weekly Prediction Pipeline](#weekly-prediction-pipeline)
+- [Production Model](#production-model)
 - [Limitations](#limitations)
 - [Project Structure](#project-structure)
 - [How to Run](#how-to-run)
@@ -129,6 +130,24 @@ This rebuilds all features using only data available as of the target week (corr
 
 ---
 
+## Production Model
+
+Model A and Model B (above) are evaluation models. Their holdout seasons (2025, and 2024-2025 respectively) exist specifically to produce trustworthy, reported accuracy numbers, the 64.4%/64.7% figures in this README depend on those games never being seen during training.
+
+Once a season is fully complete, though, holding it out forever stops making sense for a model meant to actually predict future games. `train_production_model.py` trains a separate model on every available season (2016-2025) with no holdout, specifically for live 2026 predictions. Same feature set, same regularization (C=0.01) as Model A/B, the only change is the training window.
+
+This model is saved separately as `model_a_2026.pkl` / `scaler_a_2026.pkl` and never overwrites `model_a.pkl` or `model_b.pkl`. Use it via:
+
+```bash
+python src/predict_week.py --model a_2026 --season 2026 --week 1
+```
+
+**Important limitation:** this model has no fresh, comparable holdout accuracy number. All available data went into training it, so there's no untouched test set left to score it against. That's an expected tradeoff for a deployment model, not a flaw, its purpose is generating the best real predictions going forward, not producing a new benchmark figure. The reported 64.4%/64.7% accuracy numbers describe Model A/B's methodology, not this model's real-world performance, which will only be knowable in hindsight once 2026 games are actually played.
+
+`--backtest` is disabled for this model (it would score against 2024-2025, which is in-sample for it and would produce a misleading, inflated number).
+
+---
+
 ## Limitations
 
 - **Hyperparameter selection was not fully held out.** The C-value regularization sweep was evaluated directly on each split's reported test set, rather than on a separate validation period. This likely makes the reported accuracy/log loss numbers slightly optimistic. A stricter setup would hold out a validation season (e.g. 2023) for tuning and report results only on a completely untouched final test set.
@@ -152,12 +171,14 @@ nfl-game-predictor/
 ├── data/
 │   ├── raw/                  # schedules.csv, team_stats.csv, pbp.csv
 │   └── processed/            # team_week_features.csv, modeling_table.csv
-├── models/                   # model_a.pkl, scaler_a.pkl, model_b.pkl, scaler_b.pkl
+├── models/                   # model_a.pkl, scaler_a.pkl, model_b.pkl, scaler_b.pkl,
+│                             #   model_a_2026.pkl, scaler_a_2026.pkl (production model)
 ├── src/
 │   ├── data_pipeline.py      # pulls raw data from nflreadpy
 │   ├── features.py           # builds the full modeling table
 │   ├── feature_utils.py      # shared rolling-window feature helpers
 │   ├── train_classifier.py   # trains Model A and Model B, evaluation, Vegas comparison
+│   ├── train_production_model.py # trains the no-holdout production model for live 2026 use
 │   ├── predict_week.py       # predicts any season/week via CLI, works for future weeks
 │   ├── track_season.py       # season-long accuracy tracker for Model A
 │   └── combine_predictions.py # side-by-side Model A vs Model B comparison
@@ -183,8 +204,11 @@ pip install -r requirements.txt
 python src/data_pipeline.py
 python src/features.py
 
-# train both models
+# train both evaluation models
 python src/train_classifier.py
+
+# train the production model (no holdout, for live 2026 predictions)
+python src/train_production_model.py
 
 # run automated leakage tests
 pytest tests/
@@ -192,8 +216,11 @@ pytest tests/
 # backtest across 2024-2025 (Model B: true out-of-sample holdout for both seasons)
 python src/predict_week.py --model b --backtest
 
-# predict a specific upcoming week
+# predict a specific upcoming week (evaluation model)
 python src/predict_week.py --model a --season 2026 --week 1
+
+# predict a specific upcoming week (production model, no holdout)
+python src/predict_week.py --model a_2026 --season 2026 --week 1
 
 # track season-to-date accuracy once games have been played
 python src/track_season.py
