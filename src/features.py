@@ -345,3 +345,21 @@ modeling_table = games[modeling_cols].copy()
 modeling_table = modeling_table.rename(columns={'home_season': 'season', 'home_week': 'week'})
 modeling_table.to_csv("data/processed/modeling_table.csv", index=False)
 print(f"Saved modeling_table.csv ({len(modeling_table)} games, {len(modeling_table.columns)} columns)")
+
+# Explicit list of feature columns actually used as model inputs.
+# Deliberately separate from modeling_cols' identifier/target columns, and
+# deliberately NOT derived by checking which column names end in '_diff'.
+# That naming-based selection was a real bug found while building v2: it
+# silently excluded div_game, home_short_week, away_short_week, home_bye,
+# and away_bye from every trained model (train_classifier.py, predict_week.py,
+# mcnemar_test.py), despite those columns being documented Tier 2 features.
+#
+# Model A and Model B (train_classifier.py) were already trained and their
+# accuracy already reported (64.4% / 64.7%) using the old endswith('_diff')
+# selection, so they intentionally keep using that old behavior for
+# reproducibility, do not switch them to FEATURE_COLS retroactively.
+# FEATURE_COLS is used for new models going forward (see
+# train_production_model.py) where there is no existing reported accuracy
+# number to preserve.
+FEATURE_COLS = [c for c in modeling_cols if c not in
+                ['home_season', 'home_week', 'home_team', 'away_team', 'home_team_win']]

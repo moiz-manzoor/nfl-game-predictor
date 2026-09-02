@@ -25,7 +25,7 @@ import pandas as pd
 import joblib
 import os
 import argparse
-from features import modeling_cols, schedules
+from features import modeling_cols, schedules, FEATURE_COLS
 from feature_utils import apply_rolling_windows, build_sack_rate, build_pace, build_third_down_rate, build_explosive_rate, build_red_zone_rate, build_turnover_margin
 
 
@@ -60,7 +60,16 @@ team_games['point_diff_last5'] = team_games.groupby('team')['point_diff'].transf
 team_games['point_diff_s2d'] = team_games.groupby(['team', 'season'])['point_diff'].transform(lambda x: x.shift(1).expanding().mean())
 
 
-def predict_week(season, week, pbp, model, scaler):
+def predict_week(season, week, pbp, model, scaler, feature_cols=None):
+    """
+    feature_cols: explicit list of model input columns to use. If None
+    (default), falls back to the original endswith('_diff') selection, which
+    is what Model A and Model B were actually trained on, and must keep
+    using for their saved scaler/coefficients to stay valid. Pass
+    features.FEATURE_COLS explicitly for models trained with the corrected
+    feature set (e.g. the production model), which additionally includes
+    div_game, home_short_week, away_short_week, home_bye, and away_bye.
+    """
     """
     Build features and generate predictions for one season/week.
 
@@ -71,9 +80,16 @@ def predict_week(season, week, pbp, model, scaler):
     """
     # Each team's most recent rolling point-diff stats, grouped by team only
     # (not team+season) so Week 1 of a new season can still pull from the
-    # end of the prior season.
+    # end of the prior season. Filter matches pbp_prior below exactly: prior
+    # seasons in full, plus already-played weeks of the current season.
+    # (Bug fix: this used to only check season < season, which meant Week 10
+    # of 2026 would fall back all the way to the end of 2025 instead of using
+    # 2026 Weeks 1-9, which had already been played and were more current.)
     latest_point_diff = (
-        team_games[team_games['season'] < season]
+        team_games[
+            (team_games['season'] < season) |
+            ((team_games['season'] == season) & (team_games['week'] < week))
+        ]
         .sort_values(['team', 'season', 'week'])
         .groupby('team', as_index=False)
         .tail(1)[['team', 'point_diff_last3', 'point_diff_last5', 'point_diff_s2d']]
@@ -307,7 +323,10 @@ def predict_week(season, week, pbp, model, scaler):
     ].copy()
     week_features = week_features.fillna(0)
 
-    predict_cols_final = [c for c in predict_cols if c.endswith('_diff')]
+    if feature_cols is not None:
+        predict_cols_final = [c for c in feature_cols if c in week_features.columns]
+    else:
+        predict_cols_final = [c for c in predict_cols if c.endswith('_diff')]
     X = week_features[predict_cols_final]
     X_scaled = scaler.transform(X)
 
@@ -363,6 +382,14 @@ if __name__ == "__main__":
     scaler = joblib.load(f'models/scaler_{args.model}.pkl')
     print(f"Loaded Model {model_label}")
 
+    # Model A and Model B were trained on the old endswith('_diff') feature
+    # set (a pre-existing bug that silently excluded 5 flag columns). Their
+    # saved scaler/coefficients require that exact same feature set to stay
+    # valid, so they keep using it (feature_cols=None below). The production
+    # model was trained on the corrected FEATURE_COLS list, so it must be
+    # told to use that instead.
+    active_feature_cols = FEATURE_COLS if args.model == 'a_2026' else None
+
     # Optional: run across multiple weeks and aggregate
     if args.backtest and args.model == 'a_2026':
         print("--backtest is not meaningful for the production model (a_2026): "
@@ -375,7 +402,7 @@ if __name__ == "__main__":
 
         for season in [2024, 2025]:
             for wk in range(1, 18):
-                result = predict_week(season, wk, pbp, model, scaler)
+                result = predict_week(season, wk, pbp, model, scaler, feature_cols=active_feature_cols)
                 if result is not None:
                     all_results.append(result)
                     print(f"{season} Week {wk} done — {result['correct'].mean()*100:.1f}% model, {result['vegas_correct'].mean()*100:.1f}% Vegas")
@@ -399,7 +426,7 @@ if __name__ == "__main__":
         target_season = args.season
         target_week = args.week
 
-        week_result = predict_week(target_season, target_week, pbp, model, scaler)
+        week_result = predict_week(target_season, target_week, pbp, model, scaler, feature_cols=active_feature_cols)
 
         if week_result is not None:
             print(f"\n{target_season} Week {target_week} predictions (Model {model_label}):")

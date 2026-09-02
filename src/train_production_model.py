@@ -30,6 +30,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 from sklearn.linear_model import LogisticRegression
 from sklearn.preprocessing import StandardScaler
+from features import FEATURE_COLS
 
 # Load modeling table 
 modeling_table = pd.read_csv("data/processed/modeling_table.csv")
@@ -37,7 +38,13 @@ modeling_table = pd.read_csv("data/processed/modeling_table.csv")
 # No holdout: train on every available season (2016-2025) 
 train_production = modeling_table[modeling_table['season'] <= 2025]
 
-feature_cols = [col for col in modeling_table.columns if col.endswith('_diff')]
+# Uses the corrected explicit feature list (see features.py), not the old
+# endswith('_diff') selection. That old selection was a real bug that
+# silently excluded div_game, home_short_week, away_short_week, home_bye,
+# and away_bye from Model A and Model B's training. This production model
+# has no previously-published accuracy number to preserve, so it is the
+# right place to start using the corrected, complete feature set.
+feature_cols = [c for c in FEATURE_COLS if c in modeling_table.columns]
 
 x_train_production = train_production[feature_cols]
 y_train_production = train_production['home_team_win']
@@ -50,6 +57,7 @@ model_production = LogisticRegression(max_iter=1000, C=0.01)
 model_production.fit(x_train_production_scaled, y_train_production)
 
 print(f"Production model trained on {len(train_production)} games (seasons 2016-2025, no holdout)")
+print(f"Using {len(feature_cols)} features (corrected set, includes div_game/short_week/bye flags)")
 
 # Feature importance, kept for reference. No test-set accuracy exists to pair with it.
 coef_df = pd.DataFrame({
